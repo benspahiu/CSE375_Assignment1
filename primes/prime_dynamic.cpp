@@ -4,12 +4,16 @@
 #include <chrono>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
+#include <thread>
+#include <vector>
 
 using namespace std;
 
 /// arg_t represents the command-line arguments to the program
 struct arg_t {
   int n = 0;
+  int num_threads = 1;
+  int block_size = 1;
 
   /// Construct an arg_t from the command-line arguments to the program
   ///
@@ -20,17 +24,27 @@ struct arg_t {
   ///        `-h` is passed in
   arg_t(int argc, char **argv) {
     long opt;
-    while ((opt = getopt(argc, argv, "n:h")) != -1) {
+    while ((opt = getopt(argc, argv, "n:t:b:h")) != -1) {
       switch (opt) {
       case 'n':
         n = atoi(optarg);
+        break;
+      case 't':
+        num_threads = atoi(optarg);
+        break;
+      case 'b':
+        block_size = atoi(optarg);
         break;
       default: // on any error, print a help message.  This case subsumes `-h`
         throw 1;
         return;
       }
     }
-    if(n < 1){
+    if(n < 1 || num_threads < 1 || block_size < 1){
+      throw 1;
+      return;
+    }
+    if(num_threads > 32){
       throw 1;
       return;
     }
@@ -43,6 +57,8 @@ struct arg_t {
   static void usage(char *progname) {
     cout << basename(progname) << ": program that iterates from 1 to n, checking which numbers are prime\n"
          << "  -n [int]    The last integer to check (1 to n)  \n"
+         << "  -t [int]    The number of threads [1 - 32]  \n"
+         << "  -b [int]    Amount of numbers per task \n"
          << "  -h          Print help (this message)\n";
   }
 };
@@ -67,25 +83,43 @@ int main(int argc, char **argv){
     arg_t::usage(argv[0]);
     return 1;
   }
+  const int n = args->n;
+  const int num_threads = args->num_threads;
+  const int block_size = args->block_size;
 
   auto start = chrono::high_resolution_clock::now();
   atomic<bool> ans;
-  
-  tbb::parallel_for(
-    tbb::blocked_range<int>(1, args->n),
-    [&](const tbb::blocked_range<int>& range){
+  atomic<int> k(1);
+  vector<thread> thread_pool;
+  for(int i = 0; i < num_threads; i++){
+    thread_pool.push_back(thread([&](){
+      // auto thread_start = chrono::high_resolution_clock::now();
       bool local_bool = false;
-      for(int i = range.begin(); i < range.end(); i++){
-        local_bool = isPrime(i);
+      while(true){
+        int task = k.fetch_add(block_size);
+        if(task > n){
+          break;
+        }
+        int end_index = min(task + block_size, n + 1);
+        for(int j = task; j < end_index; j++){
+          local_bool = isPrime(j);
+        }
       }
       ans = local_bool;
-    }
-  );
+      // auto thread_end = chrono::high_resolution_clock::now();
+      // float thread_time = chrono::duration<float>(thread_end - thread_start).count();
+      // cout << "Thread: " << thread_time << endl;
+    }));
+  }
+  for(thread &t: thread_pool){
+    t.join();
+  }
 
   auto end = chrono::high_resolution_clock::now();
   float total_time = chrono::duration<float>(end - start).count();
   (void) ans;
 
   cout << "Time for [1-" << args-> n << "]: " << total_time << endl;
+  delete args;
   return 0;
 }
