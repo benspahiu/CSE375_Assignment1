@@ -8,6 +8,10 @@
 #include <time.h>
 #include <algorithm>
 #include <chrono>
+#include <tbb/tbb.h>
+#include <atomic>
+#include <mutex>
+// #include <thread>
 
 using namespace std;
 
@@ -140,6 +144,7 @@ private:
 	int K; // number of clusters
 	int total_values, total_points, max_iterations;
 	vector<Cluster> clusters;
+  vector<mutex> mutexes;
 
 	// return ID of nearest center (uses euclidean distance)
 	int getIDNearestCenter(Point point)
@@ -179,7 +184,7 @@ private:
 	}
 
 public:
-	KMeans(int K, int total_points, int total_values, int max_iterations)
+	KMeans(int K, int total_points, int total_values, int max_iterations) : mutexes(K)
 	{
 		this->K = K;
 		this->total_points = total_points;
@@ -222,7 +227,7 @@ public:
 
 		while(true)
 		{
-			bool done = true;
+			atomic<bool> done(true);
 
 			// associates each point to the nearest center
       // TODO: Parallelize this
@@ -235,38 +240,66 @@ public:
         - Same for addPoint
         - Just lock the clusters
       */
-			for(int i = 0; i < total_points; i++)
-			{
-				int id_old_cluster = points[i].getCluster();
-				int id_nearest_center = getIDNearestCenter(points[i]);
-
-				if(id_old_cluster != id_nearest_center)
-				{
-					if(id_old_cluster != -1)
-						clusters[id_old_cluster].removePoint(points[i].getID());
-
-					points[i].setCluster(id_nearest_center);
-					clusters[id_nearest_center].addPoint(points[i]);
-					done = false;
-				}
-			}
+      tbb::parallel_for(
+        tbb::blocked_range<int>(0, total_points),
+        [&](const tbb::blocked_range<int>& range){
+          for(int i = range.begin(); i < range.end(); i++){
+            int id_old_cluster = points[i].getCluster();
+				    int id_nearest_center = getIDNearestCenter(points[i]);
+            
+            if(id_old_cluster != id_nearest_center)
+            {
+              if(id_old_cluster != -1){
+                mutexes[id_old_cluster].lock();
+                clusters[id_old_cluster].removePoint(points[i].getID());
+                mutexes[id_old_cluster].unlock();
+              }
+              
+              points[i].setCluster(id_nearest_center);
+              mutexes[id_nearest_center].lock();
+              clusters[id_nearest_center].addPoint(points[i]);
+              mutexes[id_nearest_center].unlock();
+              done = false;
+            }
+          }
+        }
+      );
 
 			// recalculating the center of each cluster
-			for(int i = 0; i < K; i++)
-			{
-				for(int j = 0; j < total_values; j++)
-				{
-					int total_points_cluster = clusters[i].getTotalPoints();
-					double sum = 0.0;
+			tbb::parallel_for(
+        tbb::blocked_range(0, K),
+        [&](const tbb::blocked_range<int>& range){
+          for(int i = range.begin(); i < range.end(); i++){
+            for(int j = 0; j < total_values; j++)
+            {
+              int total_points_cluster = clusters[i].getTotalPoints();
+              double sum = 0.0;
 
-					if(total_points_cluster > 0)
-					{
-						for(int p = 0; p < total_points_cluster; p++)
-							sum += clusters[i].getPoint(p).getValue(j);
-						clusters[i].setCentralValue(j, sum / total_points_cluster);
-					}
-				}
-			}
+              if(total_points_cluster > 0)
+              {
+                for(int p = 0; p < total_points_cluster; p++)
+                  sum += clusters[i].getPoint(p).getValue(j);
+                clusters[i].setCentralValue(j, sum / total_points_cluster);
+              }
+            }
+          }
+        }
+      );
+      // for(int i = 0; i < K; i++)
+			// {
+			// 	for(int j = 0; j < total_values; j++)
+			// 	{
+			// 		int total_points_cluster = clusters[i].getTotalPoints();
+			// 		double sum = 0.0;
+
+			// 		if(total_points_cluster > 0)
+			// 		{
+			// 			for(int p = 0; p < total_points_cluster; p++)
+			// 				sum += clusters[i].getPoint(p).getValue(j);
+			// 			clusters[i].setCentralValue(j, sum / total_points_cluster);
+			// 		}
+			// 	}
+			// }
 
 			if(done == true || iter >= max_iterations)
 			{
@@ -358,6 +391,7 @@ int main(int argc, char *argv[])
 	}
 
 	KMeans kmeans(K, total_points, total_values, max_iterations);
+  // cout << "Running" << endl;
 	kmeans.run(points);
 
 	return 0;

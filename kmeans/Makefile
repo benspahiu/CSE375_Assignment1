@@ -1,6 +1,7 @@
 CXX = g++
 
 CXXFLAGS = -O3 -Wall -Werror
+LDFLAGS  = -ltbb #-lpthread
 
 SRC_DIR = src
 BIN_DIR = bin
@@ -15,7 +16,7 @@ all: $(TARGETS)
 
 $(BIN_DIR)/%: $(SRC_DIR)/%.cpp
 	@mkdir -p $(BIN_DIR) # Create bin directory if it doesn't exist
-	$(CXX) $(CXXFLAGS) $< -o $@
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $< -o $@
 
 $(NAMES): %: $(BIN_DIR)/%
 
@@ -25,3 +26,6 @@ clean:
 
 clean-%:
 	rm -f $(BIN_DIR)/$*
+
+clean-results:
+	rm -f results/*
