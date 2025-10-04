@@ -194,6 +194,7 @@ public:
 		if(K > total_points)
 			return;
 
+    // would ideally use an unordered_set
 		vector<int> prohibited_indexes;
 
 		// choose K distinct values for the centers of the clusters
@@ -203,6 +204,7 @@ public:
 			{
 				int index_point = rand() % total_points;
 
+        // for(auto it)
 				if(find(prohibited_indexes.begin(), prohibited_indexes.end(),
 						index_point) == prohibited_indexes.end())
 				{
@@ -223,6 +225,16 @@ public:
 			bool done = true;
 
 			// associates each point to the nearest center
+      // TODO: Parallelize this
+      /**
+        threads partition points (no two threads get the same point)
+        two threads might look at the same cluster
+        - getIDNearestCenter only ever reads from the different clusters
+        - CHECK removePoint
+          - Might need to lock each cluster before removing
+        - Same for addPoint
+        - Just lock the clusters
+      */
 			for(int i = 0; i < total_points; i++)
 			{
 				int id_old_cluster = points[i].getCluster();
@@ -303,7 +315,7 @@ public:
 
 int main(int argc, char *argv[])
 {
-  // no error checking, tangent to CSE375
+	// no error checking, tangent to CSE375
   if(argc == 2){
     // allows different executables (serial vs parallel) to work on the same
     // data points for kmeans
