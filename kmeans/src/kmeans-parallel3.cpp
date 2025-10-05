@@ -149,27 +149,53 @@ private:
 	// return ID of nearest center (uses euclidean distance)
 	int getIDNearestCenter(Point point)
 	{
-		double min_dist = numeric_limits<double>::infinity();
-		int id_cluster_center = -1;
+    // TODO: Parallelize
+		atomic<double> min_dist(numeric_limits<double>::infinity());
+		atomic<int> id_cluster_center(-1);
+    mutex mtx;
 
-		for(int i = 0; i < K; i++)
-		{
-			double sum = 0.0;
+    tbb::parallel_for(
+      tbb::blocked_range(0, K),
+      [&](const tbb::blocked_range<int>& range){
+        for(int i = range.begin(); i < range.end(); i++){
+          double sum = 0.0;
 
-			for(int j = 0; j < total_values; j++)
-			{
-				sum += pow(clusters[i].getCentralValue(j) -
-						   point.getValue(j), 2.0);
-			}
+          for(int j = 0; j < total_values; j++)
+          {
+            sum += pow(clusters[i].getCentralValue(j) -
+                  point.getValue(j), 2.0);
+          }
 
-			double dist = sqrt(sum);
+          double dist = sqrt(sum);
 
-			if(dist < min_dist)
-			{
-				min_dist = dist;
-				id_cluster_center = i;
-			}
-		}
+          unique_lock<mutex> lock(mtx);
+          if(dist < min_dist)
+          {
+            min_dist = dist;
+            id_cluster_center = i;
+          }
+        }
+      }
+    );
+
+		// for(int i = 0; i < K; i++)
+		// {
+		// 	double sum = 0.0;
+
+		// 	for(int j = 0; j < total_values; j++)
+		// 	{
+		// 		sum += pow(clusters[i].getCentralValue(j) -
+		// 				   point.getValue(j), 2.0);
+		// 	}
+
+		// 	double dist = sqrt(sum);
+
+		// 	if(dist < min_dist)
+		// 	{
+		// 		min_dist = dist;
+		// 		id_cluster_center = i;
+		// 	}
+		// }
 
 		return id_cluster_center;
 	}

@@ -11,7 +11,6 @@
 #include <tbb/tbb.h>
 #include <atomic>
 #include <mutex>
-#include <limits>
 
 using namespace std;
 
@@ -149,12 +148,21 @@ private:
 	// return ID of nearest center (uses euclidean distance)
 	int getIDNearestCenter(Point point)
 	{
-		double min_dist = numeric_limits<double>::infinity();
-		int id_cluster_center = -1;
+		double sum = 0.0, min_dist;
+		int id_cluster_center = 0;
 
-		for(int i = 0; i < K; i++)
+		for(int i = 0; i < total_values; i++)
 		{
-			double sum = 0.0;
+			sum += pow(clusters[0].getCentralValue(i) -
+					   point.getValue(i), 2.0);
+		}
+
+		min_dist = sqrt(sum);
+
+		for(int i = 1; i < K; i++)
+		{
+			double dist;
+			sum = 0.0;
 
 			for(int j = 0; j < total_values; j++)
 			{
@@ -162,7 +170,7 @@ private:
 						   point.getValue(j), 2.0);
 			}
 
-			double dist = sqrt(sum);
+			dist = sqrt(sum);
 
 			if(dist < min_dist)
 			{
@@ -215,6 +223,9 @@ public:
 
 		int iter = 1;
 
+    tbb::affinity_partitioner points_partitioner;
+    tbb::affinity_partitioner clusters_partitioner;
+    
 		while(true)
 		{
 			atomic<bool> done(true);
@@ -242,7 +253,8 @@ public:
               done = false;
             }
           }
-        }
+        },
+        points_partitioner
       );
 
 			// recalculating the center of each cluster
@@ -257,14 +269,14 @@ public:
 
               if(total_points_cluster > 0)
               {
-                // TODO: Parallelize this
                 for(int p = 0; p < total_points_cluster; p++)
                   sum += clusters[i].getPoint(p).getValue(j);
                 clusters[i].setCentralValue(j, sum / total_points_cluster);
               }
             }
           }
-        }
+        },
+        clusters_partitioner
       );
 
 			if(done == true || iter >= max_iterations)

@@ -11,7 +11,7 @@
 #include <tbb/tbb.h>
 #include <atomic>
 #include <mutex>
-#include <limits>
+// #include <thread>
 
 using namespace std;
 
@@ -144,17 +144,27 @@ private:
 	int K; // number of clusters
 	int total_values, total_points, max_iterations;
 	vector<Cluster> clusters;
-  vector<mutex> mutexes;
+  // vector<mutex> mutexes;
+  mutex mtx;
 
 	// return ID of nearest center (uses euclidean distance)
 	int getIDNearestCenter(Point point)
 	{
-		double min_dist = numeric_limits<double>::infinity();
-		int id_cluster_center = -1;
+		double sum = 0.0, min_dist;
+		int id_cluster_center = 0;
 
-		for(int i = 0; i < K; i++)
+		for(int i = 0; i < total_values; i++)
 		{
-			double sum = 0.0;
+			sum += pow(clusters[0].getCentralValue(i) -
+					   point.getValue(i), 2.0);
+		}
+
+		min_dist = sqrt(sum);
+
+		for(int i = 1; i < K; i++)
+		{
+			double dist;
+			sum = 0.0;
 
 			for(int j = 0; j < total_values; j++)
 			{
@@ -162,7 +172,7 @@ private:
 						   point.getValue(j), 2.0);
 			}
 
-			double dist = sqrt(sum);
+			dist = sqrt(sum);
 
 			if(dist < min_dist)
 			{
@@ -175,7 +185,7 @@ private:
 	}
 
 public:
-	KMeans(int K, int total_points, int total_values, int max_iterations) : mutexes(K)
+	KMeans(int K, int total_points, int total_values, int max_iterations)// : mutexes(K)
 	{
 		this->K = K;
 		this->total_points = total_points;
@@ -200,6 +210,7 @@ public:
 			{
 				int index_point = rand() % total_points;
 
+        // for(auto it)
 				if(find(prohibited_indexes.begin(), prohibited_indexes.end(),
 						index_point) == prohibited_indexes.end())
 				{
@@ -220,6 +231,16 @@ public:
 			atomic<bool> done(true);
 
 			// associates each point to the nearest center
+      // TODO: Parallelize this
+      /**
+        threads partition points (no two threads get the same point)
+        two threads might look at the same cluster
+        - getIDNearestCenter only ever reads from the different clusters
+        - CHECK removePoint
+          - Might need to lock each cluster before removing
+        - Same for addPoint
+        - Just lock the clusters
+      */
       tbb::parallel_for(
         tbb::blocked_range<int>(0, total_points),
         [&](const tbb::blocked_range<int>& range){
@@ -229,43 +250,54 @@ public:
             
             if(id_old_cluster != id_nearest_center)
             {
+              unique_lock<mutex> lock(mtx);
               if(id_old_cluster != -1){
-                mutexes[id_old_cluster].lock();
+                // mutexes[id_old_cluster].lock();
                 clusters[id_old_cluster].removePoint(points[i].getID());
-                mutexes[id_old_cluster].unlock();
+                // mutexes[id_old_cluster].unlock();
               }
               
               points[i].setCluster(id_nearest_center);
-              mutexes[id_nearest_center].lock();
+              // mutexes[id_nearest_center].lock();
               clusters[id_nearest_center].addPoint(points[i]);
-              mutexes[id_nearest_center].unlock();
+              // mutexes[id_nearest_center].unlock();
               done = false;
             }
           }
         }
       );
+			// for(int i = 0; i < total_points; i++)
+			// {
+			// 	int id_old_cluster = points[i].getCluster();
+			// 	int id_nearest_center = getIDNearestCenter(points[i]);
+
+			// 	if(id_old_cluster != id_nearest_center)
+			// 	{
+			// 		if(id_old_cluster != -1)
+			// 			clusters[id_old_cluster].removePoint(points[i].getID());
+
+			// 		points[i].setCluster(id_nearest_center);
+			// 		clusters[id_nearest_center].addPoint(points[i]);
+			// 		done = false;
+			// 	}
+			// }
 
 			// recalculating the center of each cluster
-			tbb::parallel_for(
-        tbb::blocked_range(0, K),
-        [&](const tbb::blocked_range<int>& range){
-          for(int i = range.begin(); i < range.end(); i++){
-            for(int j = 0; j < total_values; j++)
-            {
-              int total_points_cluster = clusters[i].getTotalPoints();
-              double sum = 0.0;
+			for(int i = 0; i < K; i++)
+			{
+				for(int j = 0; j < total_values; j++)
+				{
+					int total_points_cluster = clusters[i].getTotalPoints();
+					double sum = 0.0;
 
-              if(total_points_cluster > 0)
-              {
-                // TODO: Parallelize this
-                for(int p = 0; p < total_points_cluster; p++)
-                  sum += clusters[i].getPoint(p).getValue(j);
-                clusters[i].setCentralValue(j, sum / total_points_cluster);
-              }
-            }
-          }
-        }
-      );
+					if(total_points_cluster > 0)
+					{
+						for(int p = 0; p < total_points_cluster; p++)
+							sum += clusters[i].getPoint(p).getValue(j);
+						clusters[i].setCentralValue(j, sum / total_points_cluster);
+					}
+				}
+			}
 
 			if(done == true || iter >= max_iterations)
 			{
@@ -357,6 +389,7 @@ int main(int argc, char *argv[])
 	}
 
 	KMeans kmeans(K, total_points, total_values, max_iterations);
+  // cout << "Running" << endl;
 	kmeans.run(points);
 
 	return 0;

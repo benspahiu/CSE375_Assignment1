@@ -12,6 +12,7 @@
 #include <atomic>
 #include <mutex>
 #include <limits>
+#include <immintrin.h>
 
 using namespace std;
 
@@ -156,7 +157,29 @@ private:
 		{
 			double sum = 0.0;
 
-			for(int j = 0; j < total_values; j++)
+      __m256d sum_vec = _mm256_setzero_pd();
+      int j = 0;
+      for(; j <= total_values - 4; j+=4){
+        double central_values[] = {clusters[i].getCentralValue(j),
+                                  clusters[i].getCentralValue(j+1),
+                                  clusters[i].getCentralValue(j+2),
+                                  clusters[i].getCentralValue(j+3)};
+        double point_values[] = {point.getValue(j),
+                                point.getValue(j+1),
+                                point.getValue(j+2),
+                                point.getValue(j+3)};
+        __m256d va = _mm256_loadu_pd(&central_values[0]);
+        __m256d vb = _mm256_loadu_pd(&point_values[0]);
+        __m256d diff = _mm256_sub_pd(va, vb);
+        __m256d sq = _mm256_mul_pd(diff, diff);
+        sum_vec = _mm256_add_pd(sum_vec, sq);
+      }
+      __m256d temp = _mm256_setzero_pd();
+      sum_vec = _mm256_hadd_pd(sum_vec, temp);
+      sum_vec = _mm256_hadd_pd(sum_vec, temp);
+      _mm256_store_pd(&sum, sum_vec);
+
+			for(; j < total_values; j++)
 			{
 				sum += pow(clusters[i].getCentralValue(j) -
 						   point.getValue(j), 2.0);

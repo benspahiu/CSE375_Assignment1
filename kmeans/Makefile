@@ -1,7 +1,7 @@
 CXX = g++
 
 CXXFLAGS = -O3 -Wall -Werror
-LDFLAGS  = -ltbb #-lpthread
+LDFLAGS  = -ltbb -mavx
 
 SRC_DIR = src
 BIN_DIR = bin

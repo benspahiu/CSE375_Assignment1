@@ -149,18 +149,39 @@ private:
 	// return ID of nearest center (uses euclidean distance)
 	int getIDNearestCenter(Point point)
 	{
+    // TODO: Parallelize
 		double min_dist = numeric_limits<double>::infinity();
 		int id_cluster_center = -1;
 
+		// for(int i = 0; i < total_values; i++)
+		// {
+		// 	sum += pow(clusters[0].getCentralValue(i) -
+		// 			   point.getValue(i), 2.0);
+		// }
+
+		// min_dist = sqrt(sum);
+
 		for(int i = 0; i < K; i++)
 		{
-			double sum = 0.0;
+			double sum = tbb::parallel_reduce(
+        tbb::blocked_range(0, total_values),
+        (double)0,
+        [&](const tbb::blocked_range<int>& range, double acc)-> double { 
+          for(int j = range.begin(); j < range.end(); j++){
+            double diff = clusters[i].getCentralValue(j) - point.getValue(j);
+            acc += diff * diff;
+          }
+          return acc;
+        }, 
+        std::plus<double>()
+      );
 
-			for(int j = 0; j < total_values; j++)
-			{
-				sum += pow(clusters[i].getCentralValue(j) -
-						   point.getValue(j), 2.0);
-			}
+      
+			// for(int j = 0; j < total_values; j++)
+			// {
+			// 	sum += pow(clusters[i].getCentralValue(j) -
+			// 			   point.getValue(j), 2.0);
+			// }
 
 			double dist = sqrt(sum);
 

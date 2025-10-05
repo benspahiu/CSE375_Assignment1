@@ -2,7 +2,8 @@
 
 # execs=("kmeans-serial")
 # execs=("kmeans-serial" "kmeans-parallel" "kmeans-parallel1")
-execs=("kmeans-serial" "kmeans-parallel")
+# execs=("kmeans-serial" "kmeans-parallel")
+execs=("kmeans-parallel" "kmeans-parallel5" "kmeans-serial")
 # point_range=(100 1000 10000 100000)
 point_range=(100 1000 10000)
 dims=(3 6 9)
